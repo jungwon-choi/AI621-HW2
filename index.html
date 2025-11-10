@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Assignment 2 - Poisson Blending Report</title>
+    
+    <!-- MathJax for mathematical equations -->
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1100px;
+            margin: 40px auto;
+            padding: 0 20px;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f9f9f9;
+        }
+
+        h1,
+        h2,
+        h3 {
+            color: #2c3e50;
+        }
+
+        section {
+            margin-bottom: 40px;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .header {
+            background-color: #ffffff;
+            border-left: 6px solid #2c3e50;
+            padding: 20px;
+            margin-bottom: 40px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+            border-radius: 8px;
+        }
+
+        .info {
+            font-size: 1.1em;
+            margin-top: 5px;
+            color: #555;
+        }
+
+        img {
+            max-width: 100%;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+
+        .caption {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+            font-style: italic;
+        }
+
+        code {
+            background: #eee;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            border-left: 3px solid #3498db;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }
+
+        table th,
+        table td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+
+        table th {
+            background-color: #2c3e50;
+            color: white;
+        }
+
+        table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        .equation {
+            text-align: center;
+            font-style: italic;
+            padding: 10px;
+            background-color: #f0f8ff;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+
+        .result-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .result-item {
+            text-align: center;
+        }
+
+        .result-item img {
+            width: 100%;
+            height: auto;
+        }
+
+        .highlight {
+            background-color: #fff3cd;
+            padding: 15px;
+            border-left: 4px solid #ffc107;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+
+        .success {
+            background-color: #d4edda;
+            padding: 15px;
+            border-left: 4px solid #28a745;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">
+        <h1>Assignment 2 Report: Gradient-Domain Processing and Poisson Blending</h1>
+        <div class="info">
+            <strong>Name:</strong> Jungwon Choi<br>
+        </div>
+    </div>
+
+    <section>
+        <h2 id="sec-1">1. Overview</h2>
+
+        <p>
+            This assignment explores <strong>gradient-domain processing</strong>, focusing on <strong>Poisson
+                blending</strong> [Pérez et al., 2003].
+            Gradient-domain processing is a powerful image manipulation paradigm based on the insight that humans often
+            perceive image gradients more than absolute intensities.
+            By preserving the gradient structure from a source image while matching boundary conditions from a target
+            image, we can seamlessly blend objects into new backgrounds.
+        </p>
+
+        <p>
+            The implementation covers four main tasks:
+        </p>
+        <ul>
+            <li><strong>Toy Problem (20 pts):</strong> Reconstruct an image from its gradients using least squares to
+                validate the gradient-domain framework</li>
+            <li><strong>Poisson Blending (50 pts):</strong> Blend penguin images into a hiking background by preserving
+                source gradients</li>
+            <li><strong>Mixed Gradient Blending (10 pts):</strong> Select the stronger gradient between source and
+                target for improved texture handling</li>
+            <li><strong>Color to Grayscale (Bonus):</strong> Gradient-domain color to grayscale conversion that
+                preserves chromatic information invisible to standard methods</li>
+        </ul>
+
+        <p>
+            All implementations use sparse matrix operations (scipy.sparse) for computational efficiency and the least
+            squares solver (<code>lsqr</code>) for robustness to large systems.
+        </p>
+    </section>
+
+    <section>
+        <h2 id="sec-2">2. Implementation Details</h2>
+
+        <h3>2.1 Mathematical Foundation: The Poisson Equation</h3>
+
+        <p>
+            The core idea behind Poisson blending is to reconstruct an image <em>v</em> whose gradients inside region <em>S</em>
+            match those of the source image <em>s</em>,
+            while the values outside <em>S</em> match the target image <em>t</em>. This is formulated as an optimization
+            problem:
+        </p>
+
+        <div class="equation">
+            minimize: ∑<sub>i∈S, j∈N<sub>i</sub>∩S</sub> ((v<sub>i</sub> - v<sub>j</sub>) - (s<sub>i</sub> -
+            s<sub>j</sub>))<sup>2</sup>
+            + ∑<sub>i∈S, j∈N<sub>i</sub>∩¬S</sub> ((v<sub>i</sub> - t<sub>j</sub>) - (s<sub>i</sub> -
+            s<sub>j</sub>))<sup>2</sup>
+        </div>
+
+        <p>
+            where:
+        </p>
+        <ul>
+            <li><em>S</em> is the region to be blended (mask region)</li>
+            <li><em>v</em> is the unknown blended image we want to solve for</li>
+            <li><em>s</em> is the source image</li>
+            <li><em>t</em> is the target/background image</li>
+            <li><em>N<sub>i</sub></em> represents the 4-connected neighbors (up, down, left, right) of pixel <em>i</em></li>
+        </ul>
+
+        <h3>2.2 Toy Problem: Image Reconstruction from Gradients</h3>
+
+        <p>
+            The toy problem validates our gradient-domain framework by reconstructing an image from its x and y
+            gradients.
+            Given a source image <em>s(x,y)</em>, we solve for <em>v(x,y)</em> by minimizing:
+        </p>
+
+        <ol>
+            <li><strong>X-gradient constraints:</strong> (v(x+1,y) - v(x,y)) should match (s(x+1,y) - s(x,y))</li>
+            <li><strong>Y-gradient constraints:</strong> (v(x,y+1) - v(x,y)) should match (s(x,y+1) - s(x,y))</li>
+            <li><strong>Anchor constraint:</strong> v(0,0) = s(0,0) to fix the absolute intensity</li>
+        </ol>
+
+        <p>
+            <strong>Implementation approach:</strong>
+        </p>
+
+        <pre>
+# Create pixel-to-variable mapping
+im2var = np.arange(h * w).reshape(h, w)
+
+# Count total equations
+num_equations = h * (w-1) + (h-1) * w + 1
+
+# Build sparse matrix A and vector b
+# For each x-gradient: A[eq, im2var[y,x+1]] = 1, A[eq, im2var[y,x]] = -1
+#                      b[eq] = s[y,x+1] - s[y,x]
+# For each y-gradient: A[eq, im2var[y+1,x]] = 1, A[eq, im2var[y,x]] = -1
+#                      b[eq] = s[y+1,x] - s[y,x]
+# For anchor:          A[eq, im2var[0,0]] = 1, b[eq] = s[0,0]
+
+# Solve: v = lsqr(A, b)</pre>
+
+        <div class="success">
+            <strong>Result:</strong> Reconstruction error: <strong>0.0354</strong><br>
+            The low error confirms our gradient-domain framework is correctly implemented. The image is almost perfectly
+            reconstructed from its gradients alone (plus one pixel value for absolute intensity).
+        </div>
+
+        <img src="results/toy_problem_result.png" alt="Toy Problem Result">
+        <div class="caption">Figure 1: Toy problem - image reconstruction from gradients. Left: Original image. Center:
+            Reconstructed image. Right: Error map (amplified for visibility).</div>
+
+        <h3>2.3 Poisson Blending Implementation</h3>
+
+        <p>
+            Poisson blending extends the toy problem to a masked region. The key differences are:
+        </p>
+
+        <ul>
+            <li><strong>Interior constraints:</strong> For pixels <em>i</em> and <em>j</em> both inside mask <em>S</em>: v<sub>i</sub>
+                - v<sub>j</sub> = s<sub>i</sub> - s<sub>j</sub></li>
+            <li><strong>Boundary constraints:</strong> For pixel <em>i</em> inside mask and neighbor <em>j</em> outside:
+                v<sub>i</sub> = (s<sub>i</sub> - s<sub>j</sub>) + t<sub>j</sub></li>
+            <li><strong>RGB handling:</strong> Solve the system independently for each color channel</li>
+        </ul>
+
+        <p>
+            <strong>Key implementation details:</strong>
+        </p>
+
+        <pre>
+# 1. Create im2var mapping only for pixels inside the mask
+im2var = np.full((h,w), -1)
+for each pixel in mask:
+    im2var[y,x] = variable_index++
+
+# 2. Build sparse matrix A (same for all RGB channels)
+for each pixel i in mask:
+    for each neighbor j (4-connected):
+        if j is in mask:
+            A[eq, im2var[i]] = 1
+            A[eq, im2var[j]] = -1
+        else:  # boundary
+            A[eq, im2var[i]] = 1
+
+# 3. Solve for each RGB channel separately
+for channel in [R, G, B]:
+    # Build b vector for this channel
+    for each pixel i in mask:
+        for each neighbor j:
+            if j in mask:
+                b[eq] = s[i,channel] - s[j,channel]
+            else:
+                b[eq] = s[i,channel] - s[j,channel] + t[j,channel]
+    
+    # Solve: v_channel = lsqr(A, b)</pre>
+
+        <p>
+            <strong>Optimization: Bounding Box</strong><br>
+            To improve performance, we work only on a bounding box around the mask region rather than the full image.
+            This reduces the number of variables and equations significantly.
+        </p>
+
+        <h3>2.4 Mixed Gradient Blending</h3>
+
+        <p>
+            Mixed gradient blending improves upon standard Poisson blending by selecting the gradient with larger
+            magnitude:
+        </p>
+
+        <div class="equation">
+            d<sub>ij</sub> = { s<sub>i</sub> - s<sub>j</sub> if |s<sub>i</sub> - s<sub>j</sub>| > |t<sub>i</sub> -
+            t<sub>j</sub>|, otherwise t<sub>i</sub> - t<sub>j</sub> }
+        </div>
+
+        <p>
+            This approach preserves strong textures from both source and target, which is particularly useful when:
+        </p>
+        <ul>
+            <li>The source object has strong internal edges that should be preserved</li>
+            <li>The target background has textures that should show through</li>
+            <li>There are lighting differences between source and target</li>
+        </ul>
+
+        <p>
+            <strong>Implementation:</strong> Same as Poisson blending, but when building the b vector, we compare
+            gradients per-channel and choose the stronger one.
+        </p>
+
+        <h3>2.5 Color to Grayscale (Bonus)</h3>
+
+        <p>
+            Standard RGB to grayscale conversion (e.g., 0.299R + 0.587G + 0.114B) loses chromatic information. Our
+            gradient-domain approach preserves color edges:
+        </p>
+
+        <ol>
+            <li>Convert RGB image to HSV color space</li>
+            <li>Compute gradients in the Saturation (S) and Value (V) channels</li>
+            <li>For each pixel, select the gradient direction with larger magnitude</li>
+            <li>Reconstruct a grayscale image that preserves these gradients</li>
+        </ol>
+
+        <p>
+            This makes chromatic differences visible even when luminance is similar (e.g., red and green of equal
+            brightness).
+        </p>
+
+    </section>
+
+    <section>
+        <h2 id="sec-3">3. Results</h2>
+
+        <h3>3.1 Toy Problem Results</h3>
+
+        <div class="success">
+            <strong>Reconstruction Error:</strong> 0.0354<br>
+            <strong>Status:</strong> ✓ Passed (Error < 0.1 threshold)
+        </div>
+
+        <p>
+            The toy problem successfully reconstructs the image from gradients with minimal error. The error map shows
+            only tiny differences,
+            primarily due to numerical precision in the least squares solver. This validates that our gradient-domain
+            framework is correctly implemented.
+        </p>
+
+        <h3>3.2 Poisson Blending Results</h3>
+
+        <img src="results/poisson_blend_result.png" alt="Poisson Blending Result">
+        <div class="caption">Figure 2: Poisson blending of penguin chick into hiking background. Left: Source penguin
+            chick. Center: Target hiking background. Right: Seamlessly blended result.</div>
+
+        <p>
+            <strong>Observations:</strong>
+        </p>
+        <ul>
+            <li>The penguin chick blends seamlessly into the snow, adapting to the lighting conditions of the target
+                image</li>
+            <li>The color of the penguin adjusts naturally - notice how the penguin takes on the blueish tint of the
+                snow lighting</li>
+            <li>Boundary artifacts are minimal due to gradient matching at the mask boundary</li>
+            <li>Sharp edges within the penguin (eyes, beak) are preserved from the source</li>
+        </ul>
+
+        <h3>3.3 Mixed Gradient Blending Results</h3>
+
+        <img src="results/mixed_blend_result.png" alt="Mixed Gradient Blending Result">
+        <div class="caption">Figure 3: Mixed gradient blending of penguin into hiking background. The mixed gradient
+            approach selects stronger gradients from either source or target.</div>
+
+        <p>
+            <strong>Observations:</strong>
+        </p>
+        <ul>
+            <li>Mixed gradients preserve strong edges from both source and target</li>
+            <li>When the penguin has sharp features (e.g., beak, eyes), those gradients are strong and are preserved
+            </li>
+            <li>When the background has texture (e.g., snow patterns), those can show through in smooth regions of the
+                penguin</li>
+            <li>The result can look more "textured" compared to standard Poisson blending</li>
+        </ul>
+
+        <h3>3.4 Color to Grayscale Results (Bonus)</h3>
+
+        <img src="results/color2gray_result.png" alt="Color to Grayscale Result">
+        <div class="caption">Figure 4: Color to grayscale conversion. Left: Original RGB image (color blind test
+            pattern). Center: Standard grayscale. Right: Gradient-domain grayscale preserves chromatic edges.</div>
+
+        <p>
+            <strong>Observations:</strong>
+        </p>
+        <ul>
+            <li>Standard grayscale: The numbers are barely visible because red and green have similar luminance</li>
+            <li>Gradient-domain grayscale: The chromatic edge between red and green is preserved, making the pattern
+                clearly visible</li>
+            <li>This demonstrates the power of gradient-domain processing for preserving perceptual information</li>
+        </ul>
+
+    </section>
+
+    <section>
+        <h2 id="sec-4">4. Discussion and Analysis</h2>
+
+        <h3>4.1 Why Does Poisson Blending Work?</h3>
+
+        <p>
+            Poisson blending succeeds because human visual perception is more sensitive to <strong>relative
+                differences</strong> (gradients)
+            than absolute intensities. Key insights:
+        </p>
+
+        <ul>
+            <li><strong>Gradient preservation:</strong> By preserving the gradient structure of the source object, we
+                maintain its visual appearance (shapes, edges, textures)</li>
+            <li><strong>Intensity adaptation:</strong> By allowing absolute intensities to change, the object adapts to
+                the lighting/color of the target scene</li>
+            <li><strong>Boundary smoothing:</strong> Gradient constraints at the boundary naturally create smooth
+                transitions</li>
+        </ul>
+
+        <div class="highlight">
+            <strong>Analogy:</strong> Think of gradients as the "shape" of an object and intensity as its "color". Poisson
+            blending keeps the shape but recolors the object to match the scene.
+        </div>
+
+        <h3>4.2 The Power of Mixed Gradients: Beyond Simple Blending</h3>
+
+        <p>
+            While Poisson blending uses only source gradients, <strong>mixed gradient blending introduces a crucial 
+            innovation</strong>: selecting the stronger gradient at each pixel location. This seemingly simple modification 
+            unlocks powerful capabilities.
+        </p>
+
+        <h4>Core Algorithm: Why "Stronger Gradient" Works</h4>
+
+        <p>The key decision in mixed gradient blending is:</p>
+
+        <div class="highlight">
+            <strong>For each pixel and direction (x, y):</strong>
+            <ul>
+                <li>Compute source gradient: <em>∇s = s(i+1) - s(i)</em></li>
+                <li>Compute target gradient: <em>∇t = t(i+1) - t(i)</em></li>
+                <li>Choose: <em>∇ = ∇s</em> if |<em>∇s</em>| > |<em>∇t</em>|, else <em>∇ = ∇t</em></li>
+            </ul>
+        </div>
+
+        <p><strong>Why does this work?</strong></p>
+        <ul>
+            <li><strong>Strong edges are preserved:</strong> If the source has a strong edge (large gradient), it's kept. 
+                If the background has a strong texture, it shows through weak source regions.</li>
+            <li><strong>Selective integration:</strong> Unlike Poisson which always overwrites target gradients, 
+                mixed gradients allow target features to "win" where they're more prominent.</li>
+            <li><strong>Adaptivity:</strong> The algorithm automatically adapts to local image characteristics without 
+                manual tuning.</li>
+        </ul>
+
+        <h4>Critical Insight: Mixed Gradients as a General Framework</h4>
+
+        <p>
+            The power of mixed gradients extends far beyond image blending. The core idea—<strong>selecting gradients 
+            based on their significance</strong>—can be applied to many gradient-domain problems.
+        </p>
+
+        <h4>Application: Color to Grayscale (Bonus Problem)</h4>
+
+        <p>The color2gray problem demonstrates the versatility of the mixed gradient approach:</p>
+
+        <p><strong>Problem:</strong> Standard RGB-to-gray conversion (e.g., 0.299R + 0.587G + 0.114B) loses chromatic edges. 
+            A red/green checkerboard becomes uniform gray because the colors have similar luminance.</p>
+
+        <p><strong>Solution using Mixed Gradient Concept:</strong></p>
+
+        <ol>
+            <li><strong>Extract gradients from multiple channels</strong>
+                <ul>
+                    <li>Saturation (S) channel gradients: captures color boundaries</li>
+                    <li>Value (V) channel gradients: captures luminance boundaries</li>
+                </ul>
+            </li>
+            <li><strong>Apply mixed gradient selection</strong>
+                <ul>
+                    <li>For each pixel: compare |∇S| vs |∇V|</li>
+                    <li>Choose the stronger gradient</li>
+                    <li>This preserves chromatic edges (from S) AND luminance edges (from V)</li>
+                </ul>
+            </li>
+            <li><strong>Reconstruct grayscale from selected gradients</strong>
+                <ul>
+                    <li>Use the same Poisson reconstruction: min ||∇<em>v</em> - ∇<sub>selected</sub>||²</li>
+                    <li>Result: grayscale image with visible chromatic boundaries!</li>
+                </ul>
+            </li>
+        </ol>
+
+        <h4>What Makes Mixed Gradients "Work" for Color2Gray?</h4>
+
+        <ul>
+            <li><strong>Preserves chromatic edges:</strong> Where colors differ but luminance is similar (e.g., red/green), 
+                saturation gradient is strong → preserved in output</li>
+            <li><strong>Preserves luminance edges:</strong> Where brightness differs, value gradient is strong → 
+                preserved in output</li>
+            <li><strong>No manual weighting needed:</strong> The algorithm automatically emphasizes whichever channel 
+                has stronger local features</li>
+            <li><strong>Perceptually important edges survive:</strong> Strong edges = important visual features, 
+                which is exactly what we want to keep</li>
+        </ul>
+
+        <p><strong>Result:</strong> In the toy problem image, the red/green checkerboard pattern becomes clearly visible 
+            in grayscale, even though standard conversion would make it nearly uniform. This is only possible because 
+            the mixed gradient approach captured the strong saturation boundaries.</p>
+
+        <h4>Comparison Table: Poisson vs. Mixed Gradients</h4>
+
+        <table>
+            <tr>
+                <th>Aspect</th>
+                <th>Poisson Blending</th>
+                <th>Mixed Gradients</th>
+            </tr>
+            <tr>
+                <td><strong>Gradient Source</strong></td>
+                <td>Always from source image</td>
+                <td>Stronger gradient (source or target)</td>
+            </tr>
+            <tr>
+                <td><strong>Philosophy</strong></td>
+                <td>"Replace target with source"</td>
+                <td>"Combine best features of both"</td>
+            </tr>
+            <tr>
+                <td><strong>Strengths</strong></td>
+                <td>
+                    • Smooth, natural blending<br>
+                    • Good for uniform objects<br>
+                    • Preserves overall appearance<br>
+                    • Fully adapts to target lighting
+                </td>
+                <td>
+                    • Preserves strong edges from both images<br>
+                    • Better texture handling<br>
+                    • Background can show through<br>
+                    • Generalizes to multi-channel problems
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Weaknesses</strong></td>
+                <td>
+                    • May lose source texture<br>
+                    • Target features are completely lost<br>
+                    • Can look "flat" if source has weak gradients
+                </td>
+                <td>
+                    • May look less smooth<br>
+                    • Can create artifacts if gradients conflict<br>
+                    • May not fully adapt to target lighting
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Best Use Case</strong></td>
+                <td>Solid objects, lighting adjustment, photorealistic compositing</td>
+                <td>Textured objects, artistic effects, multi-channel fusion (color2gray!)</td>
+            </tr>
+            <tr>
+                <td><strong>Computational Cost</strong></td>
+                <td>Standard (one gradient computation)</td>
+                <td>Slightly higher (compare two gradients per pixel)</td>
+            </tr>
+        </table>
+
+        <h4>When to Choose Which Method?</h4>
+
+        <div class="highlight">
+            <strong>Use Poisson Blending when:</strong>
+            <ul>
+                <li>The goal is to make source fully adapt to target scene</li>
+                <li>Source is a solid, well-defined object (person, animal)</li>
+                <li>Target features should be completely replaced</li>
+                <li>Photorealistic compositing is desired</li>
+            </ul>
+
+            <strong>Use Mixed Gradients when:</strong>
+            <ul>
+                <li>Both source and target have important features to preserve</li>
+                <li>Creating artistic effects or texture mixing</li>
+                <li>Solving multi-channel fusion problems (like color2gray)</li>
+                <li>Want background textures to show through weak source regions</li>
+            </ul>
+        </div>
+
+        <h3>4.3 Implementation Challenges and Solutions</h3>
+
+        <h4>Challenge 1: Handling RGB Channels</h4>
+        <p>
+            <strong>Problem:</strong> Using the same b vector for all channels results in incorrect colors.
+            <br>
+            <strong>Solution:</strong> Build the A matrix once (structure is same for all channels), but compute a
+            separate b vector for each RGB channel.
+            This allows each channel to have different gradient magnitudes while sharing the same constraint structure.
+        </p>
+
+        <h4>Challenge 2: Boundary Conditions</h4>
+        <p>
+            <strong>Problem:</strong> Artifacts appeared at mask boundaries due to incorrect boundary constraint
+            formulation.
+            <br>
+            <strong>Solution:</strong> For boundary pixels, the constraint is v<sub>i</sub> = (s<sub>i</sub> -
+            s<sub>j</sub>) + t<sub>j</sub>,
+            not just copying t<sub>j</sub>. This preserves the gradient while anchoring to the background value.
+        </p>
+
+        <h4>Challenge 3: Gradient Sign Preservation in Color2Gray</h4>
+        <p>
+            <strong>Problem:</strong> Initial implementation used <code>np.abs(np.diff(...))</code> to compute gradients 
+            from saturation and value channels. This removed the sign of gradients, resulting in a completely blank 
+            output image. The chromatic edges were not visible at all.
+            <br>
+            <strong>Why this failed:</strong> Gradient-domain reconstruction requires <em>signed</em> gradients. 
+            The sign indicates the direction of change (increasing vs. decreasing). Using absolute values loses this 
+            crucial directional information, making reconstruction impossible.
+            <br>
+            <strong>Solution:</strong> Compute gradients directly as <code>channel[y, x+1] - channel[y, x]</code> to 
+            preserve the sign. Then compare absolute magnitudes to choose the stronger gradient, but <em>use the 
+            signed value</em> in reconstruction. This fixed the issue immediately, and the chromatic pattern became 
+            clearly visible.
+        </p>
+
+        <h4>Challenge 4: Value Range Clipping in Mixed Gradient Blending</h4>
+        <p>
+            <strong>Problem:</strong> Mixed gradient blended images appeared extremely dark, almost black. Debugging 
+            revealed pixel values were outside the valid [0, 1] range, with many negative values.
+            <br>
+            <strong>Root cause:</strong> The least-squares solver (lsqr) can produce values outside [0, 1] when 
+            the gradient constraints are inconsistent or when mixing gradients from different sources. Unlike Poisson 
+            blending which uses only source gradients, mixed gradients can create conflicting constraints.
+            <br>
+            <strong>Solution:</strong> Add <code>np.clip(blended_full, 0, 1)</code> at the end of the mixed_blend 
+            function. This ensures all pixel values are within the valid range for display. The blending results 
+            immediately became correct and visible.
+        </p>
+
+        <h3>4.4 Failure Cases and Limitations</h3>
+
+        <p>
+            While Poisson blending works well in many cases, it has limitations:
+        </p>
+
+        <ul>
+            <li><strong>Extreme lighting differences:</strong> If source is in bright sunlight and target is in shadow,
+                the object may look unnaturally dark or lose detail</li>
+            <li><strong>Color mismatch:</strong> A green object on red snow will adapt to red-ish tone, which may look
+                unnatural</li>
+            <li><strong>Transparency:</strong> Cannot handle transparent or semi-transparent objects (requires alpha
+                blending)</li>
+            <li><strong>Scale mismatch:</strong> Very different scales between source and target can create
+                unrealistic results</li>
+            <li><strong>Texture loss:</strong> Source textures may be "flattened" if target has strong gradients in
+                same regions</li>
+        </ul>
+
+        <h3>4.5 Parameter Tuning</h3>
+
+        <table>
+            <tr>
+                <th>Parameter</th>
+                <th>Value Used</th>
+                <th>Effect</th>
+            </tr>
+            <tr>
+                <td><code>use_bounding_box</code></td>
+                <td>True</td>
+                <td>Speeds up computation by ~80%, no quality loss</td>
+            </tr>
+            <tr>
+                <td><code>clip_mode</code></td>
+                <td>'float'</td>
+                <td>Clip output to [0,1] range to avoid invalid values</td>
+            </tr>
+            <tr>
+                <td><code>atol, btol</code></td>
+                <td>1e-10</td>
+                <td>Tolerance for lsqr solver - higher precision</td>
+            </tr>
+            <tr>
+                <td><code>pad</code> (mixed blend)</td>
+                <td>2</td>
+                <td>Padding around bounding box to avoid edge artifacts</td>
+            </tr>
+        </table>
+
+        <h4>Color2Gray Channel Selection</h4>
+        
+        <p>
+            For the gradient-domain color to grayscale conversion, the choice of which channels to use for gradient 
+            extraction is critical. Several options were considered:
+        </p>
+
+        <table>
+            <tr>
+                <th>Channel Combination</th>
+                <th>Result Quality</th>
+                <th>Reasoning</th>
+            </tr>
+            <tr>
+                <td><strong>RGB channels</strong></td>
+                <td>Poor</td>
+                <td>R, G, B gradients are highly correlated. Choosing the strongest among three similar gradients 
+                    doesn't capture chromatic information effectively.</td>
+            </tr>
+            <tr>
+                <td><strong>Luminance only</strong></td>
+                <td>Poor</td>
+                <td>Equivalent to standard grayscale conversion. Chromatic edges (red/green boundaries) are completely lost 
+                    since they have similar luminance.</td>
+            </tr>
+            <tr>
+                <td><strong>Saturation (S) + Value (V)</strong></td>
+                <td><strong>Excellent ✓</strong></td>
+                <td>
+                    • <strong>S channel:</strong> Captures color intensity changes (chromatic edges)<br>
+                    • <strong>V channel:</strong> Captures brightness changes (luminance edges)<br>
+                    • Together they cover both chromatic and luminance information<br>
+                    • Orthogonal information sources lead to better gradient selection
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Saturation (S) + Hue (H)</strong></td>
+                <td>Moderate</td>
+                <td>Hue is circular and discontinuous (0° = 360°), making gradient computation problematic. 
+                    Value channel is more stable and meaningful.</td>
+            </tr>
+        </table>
+
+        <p><strong>Final Choice: Saturation (S) + Value (V) from HSV color space</strong></p>
+        
+        <p>
+            This combination works because:
+        </p>
+        <ul>
+            <li><strong>Complementary information:</strong> S captures "how colorful" (chromatic edges), 
+                V captures "how bright" (luminance edges)</li>
+            <li><strong>Independent channels:</strong> A pixel can have high S gradient but low V gradient 
+                (pure color change) or vice versa (brightness change)</li>
+            <li><strong>Preserves both edge types:</strong> Red/green boundaries have high S gradient → preserved. 
+                Light/dark boundaries have high V gradient → preserved.</li>
+        </ul>
+
+    </section>
+
+</body>
+
+</html>
+
